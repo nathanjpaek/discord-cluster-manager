@@ -11,7 +11,7 @@ run-name: 'test'
 
 jobs:
   run:
-    runs-on: computeinstance-u00vq707m37svt50t8
+    runs-on: gpumode-nvidia-arc
     strategy:
       fail-fast: false
     timeout-minutes: 20
