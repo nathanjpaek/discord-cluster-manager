@@ -1,4 +1,4 @@
-name: AMD PyTorch Job
+name: test
 on:
   workflow_dispatch:
     inputs:
@@ -7,11 +7,11 @@ on:
         required: true
         type: string
 
-run-name: 'AMD Job - ${{ github.event.inputs.run_id }}'
+run-name: 'test'
 
 jobs:
   run:
-    runs-on: testrunner
+    runs-on: computeinstance-u00vq707m37svt50t8
     strategy:
       fail-fast: false
     timeout-minutes: 20
@@ -20,19 +20,13 @@ jobs:
     - name: Create input files
       shell: bash
       run: |
-        # Extract the payload content without printing it
-        PAYLOAD=$(jq -r '.inputs.payload' $GITHUB_EVENT_PATH)
-
-        # Apply mask to the extracted content
-        echo "::add-mask::$PAYLOAD"
-
-        # Now write to file (won't be logged since it's masked)
-        echo "$PAYLOAD" > payload.json.
+        PAYLOAD=$(jq '.inputs.payload' $GITHUB_EVENT_PATH)
+        echo "$PAYLOAD" > payload.py.
 
     - name: Run script
       shell: bash
       run: |
-        python3 src/runners/github-runner.py
+        python3 payload.py
 
     - name: Upload training artifacts
       uses: actions/upload-artifact@v4
