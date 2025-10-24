@@ -21,12 +21,7 @@ jobs:
       shell: bash
       run: |
         PAYLOAD=$(jq '.inputs.payload' $GITHUB_EVENT_PATH)
-        echo "$PAYLOAD" > payload.py.
-
-    - name: Run script
-      shell: bash
-      run: |
-        python3 payload.py
+        python3 -c $PAYLOAD
 
     - name: Upload training artifacts
       uses: actions/upload-artifact@v4
