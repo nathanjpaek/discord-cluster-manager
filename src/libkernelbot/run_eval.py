@@ -389,6 +389,22 @@ def profile_program(
         
         print("[NCU Profiling] Running NCU with 6 metric sections...")
         
+        # Try to use standalone binary if submission.cu exists and has main()
+        use_standalone = False
+        if Path("submission.cu").exists():
+            submission_code = Path("submission.cu").read_text()
+            if "int main(" in submission_code or "void main(" in submission_code:
+                print("[NCU Profiling] Detected standalone submission with main()")
+                if _compile_standalone_for_profiling(submission_code, arch=None):
+                    use_standalone = True
+                    call = ["./submission_standalone"]  # No arguments needed
+                    print("[NCU Profiling] Will profile standalone binary (no test harness)")
+                else:
+                    print("[NCU Profiling] Falling back to eval harness")
+        
+        if not use_standalone:
+            print("[NCU Profiling] Using eval harness approach")
+        
         # Run NCU with 6 different metric sections
         sections = [
             ("SpeedOfLight", "speed_of_light.csv"),
@@ -406,15 +422,16 @@ def profile_program(
         except Exception as e:
             print(f"[NCU Profiling] Warning: NCU not found or not accessible: {e}")
         
-        # Set up environment with POPCORN_FD pipe for the executable
+        # Set up environment (only needed if using eval harness)
         env = os.environ.copy()
-        pipe_read, pipe_write = os.pipe()
-        env["POPCORN_FD"] = str(pipe_write)
-        if seed is not None:
-            env["POPCORN_SEED"] = str(seed)
-        if multi_gpu:
-            import torch
-            env["POPCORN_GPUS"] = str(torch.cuda.device_count())
+        if not use_standalone:
+            pipe_read, pipe_write = os.pipe()
+            env["POPCORN_FD"] = str(pipe_write)
+            if seed is not None:
+                env["POPCORN_SEED"] = str(seed)
+            if multi_gpu:
+                import torch
+                env["POPCORN_GPUS"] = str(torch.cuda.device_count())
         
         ncu_success = True
         for section_name, csv_file in sections:
@@ -428,15 +445,25 @@ def profile_program(
                 ] + call
                 print(f"[NCU Profiling] Command: {' '.join(ncu_cmd)}")
                 
-                result = subprocess.run(
-                    ncu_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    check=False,
-                    env=env,
-                    pass_fds=[pipe_write],
-                )
+                # Run NCU with or without environment setup depending on standalone vs harness
+                if use_standalone:
+                    result = subprocess.run(
+                        ncu_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        check=False,
+                    )
+                else:
+                    result = subprocess.run(
+                        ncu_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        check=False,
+                        env=env,
+                        pass_fds=[pipe_write],
+                    )
                 
                 print(f"[NCU Profiling] Return code: {result.returncode}")
                 print(f"[NCU Profiling] Stdout length: {len(result.stdout)} bytes")
@@ -464,9 +491,10 @@ def profile_program(
                 print(f"[NCU Profiling] Error running NCU section {section_name}: {e}")
                 ncu_success = False
         
-        # Clean up pipe
-        os.close(pipe_write)
-        os.close(pipe_read)
+        # Clean up pipe (only if using eval harness)
+        if not use_standalone:
+            os.close(pipe_write)
+            os.close(pipe_read)
         
         # Parse NCU results
         profile_result = None
@@ -497,8 +525,15 @@ def profile_program(
             except Exception as e:
                 print(f"[NCU Profiling] Error parsing NCU results: {e}")
         
-        # Run the actual program (without profiling wrapper) to get execution results
-        run_result = run_program(call, seed=seed, timeout=timeout, multi_gpu=multi_gpu)
+        # Run the actual program to get execution results
+        if use_standalone:
+            # For standalone, just run it directly
+            print("[Running standalone binary for test results]")
+            run_result = run_program(["./submission_standalone"], seed=None, timeout=timeout, multi_gpu=multi_gpu)
+        else:
+            # For harness approach, run eval.out normally
+            print("[Running eval harness for test results]")
+            run_result = run_program(call, seed=seed, timeout=timeout, multi_gpu=multi_gpu)
         
         return run_result, profile_result
     else:
@@ -611,6 +646,34 @@ def make_system_info() -> SystemInfo: # noqa: C901
     info.platform = platform.platform()
 
     return info
+
+
+def _compile_standalone_for_profiling(
+    submission_source: str,
+    arch: Optional[int] = None,
+) -> bool:
+    """Compile submission as standalone binary for NCU profiling.
+    Returns True if successful."""
+    print("[Profiling] Compiling standalone binary for NCU...")
+    
+    # Write standalone submission
+    Path("submission_standalone.cu").write_text(submission_source)
+    
+    # Compile standalone
+    nvcc_cmd = ["nvcc", "-O3"]
+    if arch is None:
+        nvcc_cmd.append("-arch=native")
+    else:
+        nvcc_cmd.append(f"-gencode=arch=compute_{arch},code=sm_{arch}")
+    nvcc_cmd.extend(["-o", "submission_standalone", "submission_standalone.cu"])
+    
+    try:
+        result = subprocess.run(nvcc_cmd, capture_output=True, text=True, timeout=180, check=True)
+        print("[Profiling] Standalone compilation successful")
+        return True
+    except Exception as e:
+        print(f"[Profiling] Standalone compilation failed: {e}")
+        return False
 
 
 def run_cuda_script(  # # noqa: C901

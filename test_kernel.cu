@@ -1,29 +1,55 @@
-//!POPCORN leaderboard identity_cuda
+#include <stdio.h>
+#include <cuda_runtime.h>
 
-#include <array>
-#include <vector>
-#include "task.h"
-#include "utils.h"
-
-__global__ void copy_kernel(float *input, float *output, int N)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    // if (idx < N)
-    // {
-    output[idx] = input[idx];
-    // }
+__global__ void saxpy_kernel(int n, float a, float *x, float *y) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        y[i] = a * x[i] + y[i];
+    }
 }
 
-output_t custom_kernel(input_t data)
-{
-    return data;
+void saxpy(int n, float a, float *x, float *y) {
+    float *d_x, *d_y;
+    
+    cudaMalloc(&d_x, n * sizeof(float));
+    cudaMalloc(&d_y, n * sizeof(float));
+    
+    cudaMemcpy(d_x, x, n * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_y, y, n * sizeof(float), cudaMemcpyHostToDevice);
+    
+    int blockSize = 256;
+    int numBlocks = (n + blockSize - 1) / blockSize;
+    
+    saxpy_kernel<<<numBlocks, blockSize>>>(n, a, d_x, d_y);
+    
+    cudaMemcpy(y, d_y, n * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_x);
+    cudaFree(d_y);
 }
 
-// curl -X POST \
-  -H "X-Popcorn-Cli-Id: test-user-123" \
-  -F "file=@/Users/willychan/Desktop/projects/discord-cluster-manager/test_kernel.cu" \
-  "http://184.72.131.76:8000/identity_cuda/NVIDIA/test"
-
-
-  // # Replace YOUR_AWS_IP with your actual IP
-// curl http://184.72.131.76:8000/leaderboards
+int main(void) {
+    int N = 1 << 20; // 1M elements
+    float a = 2.0f;
+    
+    float *x = (float*)malloc(N * sizeof(float));
+    float *y = (float*)malloc(N * sizeof(float));
+    
+    for (int i = 0; i < N; i++) {
+        x[i] = 1.0f;
+        y[i] = 2.0f;
+    }
+    
+    saxpy(N, a, x, y);
+    
+    float maxError = 0.0f;
+    for (int i = 0; i < N; i++) {
+        maxError = fmax(maxError, fabs(y[i] - 4.0f));
+    }
+    printf("Max error: %f\n", maxError);
+    
+    free(x);
+    free(y);
+    
+    return 0;
+}
