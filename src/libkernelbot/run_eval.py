@@ -420,13 +420,10 @@ def profile_program(
         for section_name, csv_file in sections:
             try:
                 print(f"[NCU Profiling] Running section: {section_name}")
-                # Force NCU to profile by using application replay mode
-                # This ensures NCU captures all kernel launches
+                # Simple NCU invocation matching working shell script approach
                 ncu_cmd = [
                     "ncu",
                     "--csv",
-                    "--target-processes", "all",
-                    "--replay-mode", "application",
                     "--section", section_name
                 ] + call
                 print(f"[NCU Profiling] Command: {' '.join(ncu_cmd)}")
