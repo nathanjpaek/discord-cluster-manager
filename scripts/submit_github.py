@@ -263,7 +263,7 @@ def format_result_summary(result: dict) -> str:
                 
                 lines.append("│")
             
-            # Execution Info
+            # Execution Info: TODO This appears to be buggy and not consistent: would prefer to have per-kernel benchmark tests instead.
             run_data = phase_data.get("run", {})
             if run_data:
                 run_success = run_data.get("success", False)
@@ -271,30 +271,30 @@ def format_result_summary(result: dict) -> str:
                 run_symbol = "✓" if run_passed else "✗"
                 duration = run_data.get("duration", 0)
                 
-                lines.append(f"│ Execution: {run_symbol} {'Passed' if run_passed else 'Failed'}")
+                lines.append(f"│ Execution:")
                 lines.append(f"│   Duration: {duration:.4f}s")
-                lines.append(f"│   Exit Code: {run_data.get('exit_code', 'N/A')}")
+                # lines.append(f"│   Exit Code: {run_data.get('exit_code', 'N/A')}")
                 
-                # Test results
-                test_results = run_data.get("result", {})
-                if test_results:
-                    test_count = test_results.get("test-count", "0")
-                    lines.append(f"│   Tests: {test_count}")
+            #     # Test results
+            #     test_results = run_data.get("result", {})
+            #     if test_results:
+            #         test_count = test_results.get("test-count", "0")
+            #         lines.append(f"│   Tests: {test_count}")
                     
-                    # Show individual test results
-                    for key, value in test_results.items():
-                        if key.startswith("test.") and ".status" in key:
-                            test_num = key.split(".")[1]
-                            spec_key = f"test.{test_num}.spec"
-                            spec = test_results.get(spec_key, "")
-                            test_sym = "✓" if value == "pass" else "✗"
-                            lines.append(f"│     {test_sym} Test {test_num}: {spec} → {value}")
+            #         # Show individual test results
+            #         for key, value in test_results.items():
+            #             if key.startswith("test.") and ".status" in key:
+            #                 test_num = key.split(".")[1]
+            #                 spec_key = f"test.{test_num}.spec"
+            #                 spec = test_results.get(spec_key, "")
+            #                 test_sym = "✓" if value == "pass" else "✗"
+            #                 lines.append(f"│     {test_sym} Test {test_num}: {spec} → {value}")
                     
-                    # Overall check
-                    overall_check = test_results.get("check", "")
-                    if overall_check:
-                        check_sym = "✓" if overall_check == "pass" else "✗"
-                        lines.append(f"│   Overall Check: {check_sym} {overall_check.upper()}")
+            #         # Overall check
+            #         overall_check = test_results.get("check", "")
+            #         if overall_check:
+            #             check_sym = "✓" if overall_check == "pass" else "✗"
+            #             lines.append(f"│   Overall Check: {check_sym} {overall_check.upper()}")
                 
                 # Show stdout/stderr if present
                 if run_data.get("stdout"):
@@ -303,11 +303,11 @@ def format_result_summary(result: dict) -> str:
                     for line in run_data["stdout"].strip().split("\n")[:10]:
                         lines.append(f"│   {line}")
                 
-                if run_data.get("stderr"):
-                    lines.append("│")
-                    lines.append("│ Stderr:")
-                    for line in run_data["stderr"].strip().split("\n")[:10]:
-                        lines.append(f"│   {line}")
+            #     if run_data.get("stderr"):
+            #         lines.append("│")
+            #         lines.append("│ Stderr:")
+            #         for line in run_data["stderr"].strip().split("\n")[:10]:
+            #             lines.append(f"│   {line}")
             
             # Profile info
             profile = phase_data.get("profile")
@@ -379,15 +379,9 @@ def main():
     print(f"conclusion: {conclusion}")
     print(f"url: {html_url}")
 
-    result = download_result_artifact(cfg, run_pk)
-
-    print("========RESULTS OBJECT========")
-    print("========RESULTS OBJECT========")
-    print("========RESULTS OBJECT========")
-    print(result)
-    print("========RESULTS OBJECT========")
-    print("========RESULTS OBJECT========")
-    print("========RESULTS OBJECT========")
+    result = download_result_artifact(cfg, run_pk)    
+    # RESULTS OBJECT EX:
+    # {'success': True, 'error': '', 'system': {'gpu': 'NVIDIA L4\n', 'device_count': 1, 'cpu': 'AMD EPYC 7R13 Processor', 'runtime': 'CUDA', 'platform': 'Linux-6.8.0-1040-aws-x86_64-with-glibc2.35', 'torch': ''}, 'runs': {'test': {'start': '2025-10-27T07:30:33.439451', 'end': '2025-10-27T07:30:44.403778', 'compilation': {'nvcc_found': True, 'nvcc_version': 'nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:23:50_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0\n', 'success': True, 'command': '/usr/local/cuda/bin/nvcc --std=c++20 -DNDEBUG -Xcompiler=-Wno-psabi -Xcompiler=-fno-strict-aliasing --expt-extended-lambda --expt-relaxed-constexpr -forward-unknown-to-host-compiler -O3 -Xnvlink=--verbose -Xptxas=--verbose -Xptxas=--warn-on-spills eval.cu submission.cu -arch=native -o eval.out', 'stdout': '', 'stderr': "ptxas info    : 0 bytes gmem\nptxas info    : 0 bytes gmem\nptxas info    : Compiling entry function '_Z11copy_kernelPfS_i' for 'sm_89'\nptxas info    : Function properties for _Z11copy_kernelPfS_i\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 8 registers, used 0 barriers, 372 bytes cmem[0]\nptxas info    : Compile time = 1.623 ms\nnvlink info    : 0 bytes gmem\n", 'exit_code': 0}, 'run': {'success': True, 'passed': True, 'command': './eval.out test /tmp/tmp1adbp9j9', 'stdout': '', 'stderr': '', 'exit_code': 0, 'duration': 0.2941154419995655, 'result': {'test-count': '1', 'test.0.spec': 'size: 128; seed: 1', 'test.0.status': 'pass', 'check': 'pass'}}, 'profile': None}}}
 
     print("\n=== Result Summary ===")
     print(format_result_summary(result))

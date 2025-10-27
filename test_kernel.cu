@@ -8,22 +8,35 @@
 __global__ void copy_kernel(float *input, float *output, int N)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    // if (idx < N)
-    // {
-    output[idx] = input[idx];
-    // }
+    if (idx < N)
+    {
+        output[idx] = input[idx];
+    }
 }
 
 output_t custom_kernel(input_t data)
 {
-    return data;
+    // Allocate GPU memory
+    int N = data.size();
+    float *d_input, *d_output;
+    cudaMalloc(&d_input, N * sizeof(float));
+    cudaMalloc(&d_output, N * sizeof(float));
+    
+    // Copy input to GPU
+    cudaMemcpy(d_input, data.data(), N * sizeof(float), cudaMemcpyHostToDevice);
+    
+    // Launch kernel - THIS IS WHERE YOUR KERNEL RUNS ON GPU!
+    int blockSize = 256;
+    int numBlocks = (N + blockSize - 1) / blockSize;
+    copy_kernel<<<numBlocks, blockSize>>>(d_input, d_output, N);
+    
+    // Copy result back to CPU
+    output_t result(N);
+    cudaMemcpy(result.data(), d_output, N * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    // Free GPU memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+    
+    return result;
 }
-
-// curl -X POST \
-  -H "X-Popcorn-Cli-Id: test-user-123" \
-  -F "file=@/Users/willychan/Desktop/projects/discord-cluster-manager/test_kernel.cu" \
-  "http://184.72.131.76:8000/identity_cuda/NVIDIA/test"
-
-
-  // # Replace YOUR_AWS_IP with your actual IP
-// curl http://184.72.131.76:8000/leaderboards
