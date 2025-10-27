@@ -1,0 +1,23 @@
+{
+  "lang": "cu",
+  "mode": "test",
+  "arch": null,
+  "sources": {
+    "submission.cu": "//!POPCORN leaderboard identity_cuda\n\n#include <array>\n#include <vector>\n#include \"task.h\"\n#include \"utils.h\"\n\n__global__ void copy_kernel(float *input, float *output, int N)\n{\n    int idx = blockIdx.x * blockDim.x + threadIdx.x;\n    if (idx < N)\n    {\n        output[idx] = input[idx];\n    }\n}\n\noutput_t custom_kernel(input_t data)\n{\n    return data;\n}"
+  },
+  "headers": {},
+  "defines": {},
+  "include_dirs": [],
+  "libraries": [],
+  "tests": [
+    {"size": 127, "seed": 4242}
+  ],
+  "benchmarks": [],
+  "test_timeout": 180,
+  "benchmark_timeout": 180,
+  "ranked_timeout": 180,
+  "ranking_by": "last",
+  "seed": null,
+  "multi_gpu": false
+}
+
