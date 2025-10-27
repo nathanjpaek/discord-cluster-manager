@@ -1,21 +1,21 @@
 {
   "metadata": {},
   "summary": {
-    "SM %": 16.26,
-    "Memory %": 86.57,
-    "DRAM %": 86.57,
+    "SM %": 16.27,
+    "Memory %": 86.28,
+    "DRAM %": 86.28,
     "L1/TEX Cache %": 21.1,
-    "L2 Cache %": 38.15
+    "L2 Cache %": 38.06
   },
   "bottlenecks": [
     {
       "type": "Memory %",
-      "utilization": 86.57,
+      "utilization": 86.28,
       "severity": "high"
     },
     {
       "type": "Scheduler Stalls",
-      "no_eligible_pct": 91.64,
+      "no_eligible_pct": 91.7,
       "severity": "high"
     }
   ],
@@ -28,28 +28,28 @@
       "Issued Ipc Active": 0.34
     },
     "memory": {
-      "Mem Busy": 28.7,
-      "Max Bandwidth": 86.52,
-      "L1/TEX Hit Rate": 32.92,
-      "L2 Hit Rate": 33.66,
-      "Mem Pipes Busy": 16.25
+      "Mem Busy": 28.78,
+      "Max Bandwidth": 86.55,
+      "L1/TEX Hit Rate": 32.86,
+      "L2 Hit Rate": 33.6,
+      "Mem Pipes Busy": 16.15
     },
     "occupancy": {
-      "Achieved Occupancy": 85.34,
+      "Achieved Occupancy": 85.41,
       "Theoretical Occupancy": 100.0,
-      "Achieved Active Warps Per SM": 40.96,
+      "Achieved Active Warps Per SM": 41.0,
       "Theoretical Active Warps per SM": 48.0
     },
     "control_flow": {
-      "One or More Eligible": 8.36,
-      "No Eligible": 91.64,
-      "Active Warps Per Scheduler": 10.15,
+      "One or More Eligible": 8.3,
+      "No Eligible": 91.7,
+      "Active Warps Per Scheduler": 10.18,
       "Eligible Warps Per Scheduler": 0.1,
       "Issued Warp Per Scheduler": 0.08,
       "Avg. Active Threads Per Warp": 32.0,
       "Avg. Not Predicated Off Threads Per Warp": 29.87,
-      "Warp Cycles Per Issued Instruction": 119.16,
-      "Warp Cycles Per Executed Instruction": 121.98
+      "Warp Cycles Per Issued Instruction": 119.69,
+      "Warp Cycles Per Executed Instruction": 122.52
     }
   },
   "recommendations": [

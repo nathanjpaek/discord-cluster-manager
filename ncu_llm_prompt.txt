@@ -62,16 +62,16 @@ int main(void) {
 
 ## Performance Summary
 - SM %: 16.3%
-- Memory %: 86.6%
-- DRAM %: 86.6%
+- Memory %: 86.3%
+- DRAM %: 86.3%
 - L1/TEX Cache %: 21.1%
 - L2 Cache %: 38.1%
 
 ## Identified Bottlenecks
 1. **Memory %** (Severity: high)
-   - utilization: 86.57
+   - utilization: 86.28
 2. **Scheduler Stalls** (Severity: high)
-   - no_eligible_pct: 91.64
+   - no_eligible_pct: 91.7
 
 ## Detailed Metrics
 
@@ -83,28 +83,28 @@ int main(void) {
 - Issued Ipc Active: 0.34
 
 ### Memory
-- Mem Busy: 28.70
-- Max Bandwidth: 86.52
-- L1/TEX Hit Rate: 32.92
-- L2 Hit Rate: 33.66
-- Mem Pipes Busy: 16.25
+- Mem Busy: 28.78
+- Max Bandwidth: 86.55
+- L1/TEX Hit Rate: 32.86
+- L2 Hit Rate: 33.60
+- Mem Pipes Busy: 16.15
 
 ### Occupancy
-- Achieved Occupancy: 85.34
+- Achieved Occupancy: 85.41
 - Theoretical Occupancy: 100.00
-- Achieved Active Warps Per SM: 40.96
+- Achieved Active Warps Per SM: 41.00
 - Theoretical Active Warps per SM: 48.00
 
 ### Control_Flow
-- One or More Eligible: 8.36
-- No Eligible: 91.64
-- Active Warps Per Scheduler: 10.15
+- One or More Eligible: 8.30
+- No Eligible: 91.70
+- Active Warps Per Scheduler: 10.18
 - Eligible Warps Per Scheduler: 0.10
 - Issued Warp Per Scheduler: 0.08
 - Avg. Active Threads Per Warp: 32.00
 - Avg. Not Predicated Off Threads Per Warp: 29.87
-- Warp Cycles Per Issued Instruction: 119.16
-- Warp Cycles Per Executed Instruction: 121.98
+- Warp Cycles Per Issued Instruction: 119.69
+- Warp Cycles Per Executed Instruction: 122.52
 
 ## Recommended Optimizations
 
