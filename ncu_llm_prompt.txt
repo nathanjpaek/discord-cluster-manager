@@ -1,0 +1,121 @@
+# CUDA Kernel Optimization Analysis
+
+## Kernel Code
+```cuda
+#include <stdio.h>
+#include <cuda_runtime.h>
+
+__global__ void saxpy_kernel(int n, float a, float *x, float *y) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        y[i] = a * x[i] + y[i];
+    }
+}
+
+void saxpy(int n, float a, float *x, float *y) {
+    float *d_x, *d_y;
+    
+    cudaMalloc(&d_x, n * sizeof(float));
+    cudaMalloc(&d_y, n * sizeof(float));
+    
+    cudaMemcpy(d_x, x, n * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_y, y, n * sizeof(float), cudaMemcpyHostToDevice);
+    
+    int blockSize = 256;
+    int numBlocks = (n + blockSize - 1) / blockSize;
+    
+    saxpy_kernel<<<numBlocks, blockSize>>>(n, a, d_x, d_y);
+    
+    cudaMemcpy(y, d_y, n * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_x);
+    cudaFree(d_y);
+}
+
+int main(void) {
+    int N = 1 << 20; // 1M elements
+    float a = 2.0f;
+    
+    float *x = (float*)malloc(N * sizeof(float));
+    float *y = (float*)malloc(N * sizeof(float));
+    
+    for (int i = 0; i < N; i++) {
+        x[i] = 1.0f;
+        y[i] = 2.0f;
+    }
+    
+    saxpy(N, a, x, y);
+    
+    float maxError = 0.0f;
+    for (int i = 0; i < N; i++) {
+        maxError = fmax(maxError, fabs(y[i] - 4.0f));
+    }
+    printf("Max error: %f\n", maxError);
+    
+    free(x);
+    free(y);
+    
+    return 0;
+}
+
+```
+
+## Performance Summary
+- SM %: 16.3%
+- Memory %: 86.6%
+- DRAM %: 86.6%
+- L1/TEX Cache %: 21.1%
+- L2 Cache %: 38.1%
+
+## Identified Bottlenecks
+1. **Memory %** (Severity: high)
+   - utilization: 86.57
+2. **Scheduler Stalls** (Severity: high)
+   - no_eligible_pct: 91.64
+
+## Detailed Metrics
+
+### Compute
+- SM Busy: 8.45
+- Issue Slots Busy: 8.45
+- Executed Ipc Active: 0.33
+- Executed Ipc Elapsed: 0.30
+- Issued Ipc Active: 0.34
+
+### Memory
+- Mem Busy: 28.70
+- Max Bandwidth: 86.52
+- L1/TEX Hit Rate: 32.92
+- L2 Hit Rate: 33.66
+- Mem Pipes Busy: 16.25
+
+### Occupancy
+- Achieved Occupancy: 85.34
+- Theoretical Occupancy: 100.00
+- Achieved Active Warps Per SM: 40.96
+- Theoretical Active Warps per SM: 48.00
+
+### Control_Flow
+- One or More Eligible: 8.36
+- No Eligible: 91.64
+- Active Warps Per Scheduler: 10.15
+- Eligible Warps Per Scheduler: 0.10
+- Issued Warp Per Scheduler: 0.08
+- Avg. Active Threads Per Warp: 32.00
+- Avg. Not Predicated Off Threads Per Warp: 29.87
+- Warp Cycles Per Issued Instruction: 119.16
+- Warp Cycles Per Executed Instruction: 121.98
+
+## Recommended Optimizations
+
+### 1. Memory Optimization
+**Issue**: High memory throughput utilization
+
+**Suggestions**:
+- Use shared memory to reduce global memory accesses
+- Coalesce memory accesses for better bandwidth utilization
+- Consider using texture memory for read-only data
+- Check for bank conflicts in shared memory
+
+---
+Based on the above profiling data, provide 3-5 specific, actionable optimization tips for this kernel. Focus on the most impactful changes first.

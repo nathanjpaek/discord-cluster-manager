@@ -1,0 +1,67 @@
+{
+  "metadata": {},
+  "summary": {
+    "SM %": 16.26,
+    "Memory %": 86.57,
+    "DRAM %": 86.57,
+    "L1/TEX Cache %": 21.1,
+    "L2 Cache %": 38.15
+  },
+  "bottlenecks": [
+    {
+      "type": "Memory %",
+      "utilization": 86.57,
+      "severity": "high"
+    },
+    {
+      "type": "Scheduler Stalls",
+      "no_eligible_pct": 91.64,
+      "severity": "high"
+    }
+  ],
+  "metrics": {
+    "compute": {
+      "SM Busy": 8.45,
+      "Issue Slots Busy": 8.45,
+      "Executed Ipc Active": 0.33,
+      "Executed Ipc Elapsed": 0.3,
+      "Issued Ipc Active": 0.34
+    },
+    "memory": {
+      "Mem Busy": 28.7,
+      "Max Bandwidth": 86.52,
+      "L1/TEX Hit Rate": 32.92,
+      "L2 Hit Rate": 33.66,
+      "Mem Pipes Busy": 16.25
+    },
+    "occupancy": {
+      "Achieved Occupancy": 85.34,
+      "Theoretical Occupancy": 100.0,
+      "Achieved Active Warps Per SM": 40.96,
+      "Theoretical Active Warps per SM": 48.0
+    },
+    "control_flow": {
+      "One or More Eligible": 8.36,
+      "No Eligible": 91.64,
+      "Active Warps Per Scheduler": 10.15,
+      "Eligible Warps Per Scheduler": 0.1,
+      "Issued Warp Per Scheduler": 0.08,
+      "Avg. Active Threads Per Warp": 32.0,
+      "Avg. Not Predicated Off Threads Per Warp": 29.87,
+      "Warp Cycles Per Issued Instruction": 119.16,
+      "Warp Cycles Per Executed Instruction": 121.98
+    }
+  },
+  "recommendations": [
+    {
+      "category": "Memory Optimization",
+      "issue": "High memory throughput utilization",
+      "suggestions": [
+        "Use shared memory to reduce global memory accesses",
+        "Coalesce memory accesses for better bandwidth utilization",
+        "Consider using texture memory for read-only data",
+        "Check for bank conflicts in shared memory"
+      ]
+    }
+  ]
+}
