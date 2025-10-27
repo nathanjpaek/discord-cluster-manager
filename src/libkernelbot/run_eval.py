@@ -311,6 +311,9 @@ def profile_program(
     seed: Optional[int],
     timeout: int,
     multi_gpu: bool,
+    submission_source: Optional[str] = None,
+    arch: Optional[int] = None,
+    **extra_kwargs,
 ) -> tuple[RunResult, Optional[ProfileResult]]:
     # The runner-specific configuration should implement logic
     # to fetch the data in this directory and return it as
@@ -389,18 +392,16 @@ def profile_program(
         
         print("[NCU Profiling] Running NCU with 6 metric sections...")
         
-        # Try to use standalone binary if submission.cu exists and has main()
+        # Try to use standalone binary if submission has main()
         use_standalone = False
-        if Path("submission.cu").exists():
-            submission_code = Path("submission.cu").read_text()
-            if "int main(" in submission_code or "void main(" in submission_code:
-                print("[NCU Profiling] Detected standalone submission with main()")
-                if _compile_standalone_for_profiling(submission_code, arch=None):
-                    use_standalone = True
-                    call = ["./submission_standalone"]  # No arguments needed
-                    print("[NCU Profiling] Will profile standalone binary (no test harness)")
-                else:
-                    print("[NCU Profiling] Falling back to eval harness")
+        if submission_source and ("int main(" in submission_source or "void main(" in submission_source):
+            print("[NCU Profiling] Detected standalone submission with main()")
+            if _compile_standalone_for_profiling(submission_source, arch=arch):
+                use_standalone = True
+                call = ["./submission_standalone"]  # No arguments needed
+                print("[NCU Profiling] Will profile standalone binary (no test harness)")
+            else:
+                print("[NCU Profiling] Falling back to eval harness")
         
         if not use_standalone:
             print("[NCU Profiling] Using eval harness approach")
@@ -508,12 +509,8 @@ def profile_program(
                 # Save parsed JSON
                 parser.to_json(str(ncu_output_dir / "parsed_metrics.json"))
                 
-                # Generate LLM prompt with kernel source if available
-                kernel_code = None
-                if Path("submission.cu").exists():
-                    kernel_code = Path("submission.cu").read_text()
-                
-                llm_prompt = parser.to_llm_prompt(kernel_code)
+                # Generate LLM prompt with kernel source
+                llm_prompt = parser.to_llm_prompt(submission_source)
                 with open(ncu_output_dir / "llm_prompt.txt", 'w') as f:
                     f.write(llm_prompt)
                 print(f"[NCU Parser] LLM prompt saved to: {ncu_output_dir / 'llm_prompt.txt'}")
@@ -706,6 +703,10 @@ def run_cuda_script(  # # noqa: C901
         tuple[CompileResult, RunResult]: CUDA compile/eval result information
     """
     start = datetime.datetime.now()
+    
+    # Save submission source before cleanup (needed for NCU profiling)
+    submission_source = sources.get("submission.cu", "")
+    
     try:
         # Write submission files to directory
         _create_files(sources)
@@ -738,7 +739,9 @@ def run_cuda_script(  # # noqa: C901
             if os.path.exists(f):
                 os.remove(f)
 
-    run_result, profile_result = run_single_evaluation(system, ["./eval.out"], **kwargs)
+    # Pass submission source and arch to enable standalone profiling
+    kwargs_with_extras = {**kwargs, "submission_source": submission_source, "arch": arch}
+    run_result, profile_result = run_single_evaluation(system, ["./eval.out"], **kwargs_with_extras)
     return EvalResult(
         start=start,
         end=datetime.datetime.now(),
