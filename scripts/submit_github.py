@@ -475,10 +475,24 @@ def main():
                     print("└───────────────────────────────────────────────────────────────────────┘")
             
             if "llm_prompt" in ncu_data:
-                print("\n┌─ LLM Prompt Available ────────────────────────────────────────────────┐")
-                print("│ Full optimization analysis with kernel code has been generated.")
-                print("│ The complete LLM prompt is available in the profile-data artifact.")
-                print("│ First 500 characters:")
+                # Save LLM prompt to file
+                prompt_file = "ncu_llm_prompt.txt"
+                with open(prompt_file, "w") as f:
+                    f.write(ncu_data["llm_prompt"])
+                
+                # Save parsed metrics to file
+                if "metrics" in ncu_data:
+                    metrics_file = "ncu_parsed_metrics.json"
+                    with open(metrics_file, "w") as f:
+                        json.dump(ncu_data["metrics"], f, indent=2)
+                
+                print("\n┌─ LLM Prompt & Metrics Saved ──────────────────────────────────────────┐")
+                print("│ NCU profiling results saved locally:")
+                print(f"│   • {prompt_file} - Full LLM optimization analysis")
+                if "metrics" in ncu_data:
+                    print(f"│   • {metrics_file} - Parsed NCU metrics (JSON)")
+                print("│")
+                print("│ Preview (first 500 chars):")
                 print("│")
                 llm_preview = ncu_data["llm_prompt"][:500].replace("\n", "\n│ ")
                 print(f"│ {llm_preview}...")
