@@ -406,6 +406,16 @@ def profile_program(
         except Exception as e:
             print(f"[NCU Profiling] Warning: NCU not found or not accessible: {e}")
         
+        # Set up environment with POPCORN_FD pipe for the executable
+        env = os.environ.copy()
+        pipe_read, pipe_write = os.pipe()
+        env["POPCORN_FD"] = str(pipe_write)
+        if seed is not None:
+            env["POPCORN_SEED"] = str(seed)
+        if multi_gpu:
+            import torch
+            env["POPCORN_GPUS"] = str(torch.cuda.device_count())
+        
         ncu_success = True
         for section_name, csv_file in sections:
             try:
@@ -419,6 +429,8 @@ def profile_program(
                     text=True,
                     timeout=timeout,
                     check=False,
+                    env=env,
+                    pass_fds=[pipe_write],
                 )
                 
                 print(f"[NCU Profiling] Return code: {result.returncode}")
@@ -446,6 +458,10 @@ def profile_program(
             except Exception as e:
                 print(f"[NCU Profiling] Error running NCU section {section_name}: {e}")
                 ncu_success = False
+        
+        # Clean up pipe
+        os.close(pipe_write)
+        os.close(pipe_read)
         
         # Parse NCU results
         profile_result = None
