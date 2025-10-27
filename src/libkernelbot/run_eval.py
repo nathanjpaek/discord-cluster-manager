@@ -382,8 +382,88 @@ def profile_program(
             )
 
         return run_result, profile_result
+    elif system.runtime == "CUDA":
+        # NCU profiling for CUDA
+        ncu_output_dir = output_dir / "ncu_output"
+        ncu_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        print("[NCU Profiling] Running NCU with 6 metric sections...")
+        
+        # Run NCU with 6 different metric sections
+        sections = [
+            ("SpeedOfLight", "speed_of_light.csv"),
+            ("MemoryWorkloadAnalysis", "memory_analysis.csv"),
+            ("ComputeWorkloadAnalysis", "compute_analysis.csv"),
+            ("Occupancy", "occupancy.csv"),
+            ("SchedulerStats", "scheduler_stats.csv"),
+            ("WarpStateStats", "warp_stats.csv"),
+        ]
+        
+        ncu_success = True
+        for section_name, csv_file in sections:
+            try:
+                print(f"[NCU Profiling] Running section: {section_name}")
+                ncu_cmd = ["ncu", "--csv", "--section", section_name] + call
+                
+                result = subprocess.run(
+                    ncu_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
+                )
+                
+                # Write CSV output to file
+                csv_path = ncu_output_dir / csv_file
+                with open(csv_path, 'w') as f:
+                    f.write(result.stdout)
+                
+                if result.returncode != 0:
+                    print(f"[NCU Profiling] Warning: NCU section {section_name} returned code {result.returncode}")
+                    print(f"[NCU Profiling] stderr: {result.stderr[:500]}")
+                    
+            except subprocess.TimeoutExpired:
+                print(f"[NCU Profiling] Warning: NCU section {section_name} timed out")
+                ncu_success = False
+            except Exception as e:
+                print(f"[NCU Profiling] Error running NCU section {section_name}: {e}")
+                ncu_success = False
+        
+        # Parse NCU results
+        profile_result = None
+        if ncu_success:
+            try:
+                from libkernelbot.ncu_parser import NCUParser
+                
+                parser = NCUParser(str(ncu_output_dir))
+                parser.parse_all()
+                
+                # Save parsed JSON
+                parser.to_json(str(ncu_output_dir / "parsed_metrics.json"))
+                
+                # Generate LLM prompt with kernel source if available
+                kernel_code = None
+                if Path("submission.cu").exists():
+                    kernel_code = Path("submission.cu").read_text()
+                
+                llm_prompt = parser.to_llm_prompt(kernel_code)
+                with open(ncu_output_dir / "llm_prompt.txt", 'w') as f:
+                    f.write(llm_prompt)
+                print(f"[NCU Parser] LLM prompt saved to: {ncu_output_dir / 'llm_prompt.txt'}")
+                
+                profile_result = ProfileResult(
+                    profiler='NCU',
+                    download_url=None,
+                )
+            except Exception as e:
+                print(f"[NCU Profiling] Error parsing NCU results: {e}")
+        
+        # Run the actual program (without profiling wrapper) to get execution results
+        run_result = run_program(call, seed=seed, timeout=timeout, multi_gpu=multi_gpu)
+        
+        return run_result, profile_result
     else:
-        # TODO: Implement profiling for other platforms
+        # Fallback for other runtimes
         return run_program(call, seed=seed, timeout=timeout, multi_gpu=multi_gpu), None
 
 def run_single_evaluation(
@@ -408,7 +488,11 @@ def run_single_evaluation(
         if mode == "test":
             timeout = test_timeout
             cases.write(tests)
-        elif mode in ["benchmark", "profile", "leaderboard"]:
+        elif mode == "profile":
+            # Profile mode uses test cases, not benchmarks
+            timeout = test_timeout
+            cases.write(tests)
+        elif mode in ["benchmark", "leaderboard"]:
             timeout = ranked_timeout if mode == "leaderboard" else benchmark_timeout
             if ranking_by == "last":
                 cases.write(benchmarks.splitlines(keepends=True)[-1])

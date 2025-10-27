@@ -31,11 +31,16 @@ def _find_repo_root(start: Path) -> Path:
     return start
 
 
-def build_payload_from_cuda(submission_path: Path, repo_root: Path) -> str:
+def build_payload_from_cuda(submission_path: Path, repo_root: Path, mode: str = "test") -> str:
     """Build base64(zlib(json)) payload expected by src/runners/github-runner.py.
 
     The config mirrors libkernelbot.task.build_task_config for a CUDA task, but
     we inline the minimal files from examples/ to make this standalone.
+    
+    Args:
+        submission_path: Path to the .cu file to submit
+        repo_root: Path to the repository root
+        mode: Execution mode (test, benchmark, or profile)
     """
     import zlib
 
@@ -52,7 +57,7 @@ def build_payload_from_cuda(submission_path: Path, repo_root: Path) -> str:
     # Minimal set of tests; benchmarks optional
     config = {
         "lang": "cu",
-        "mode": "test",
+        "mode": mode,
         "arch": None,
         "sources": {
             "eval.cu": files["eval.cu"],
@@ -180,6 +185,44 @@ def download_result_artifact(cfg: GitHubConfig, run_pk: int) -> Optional[dict]:
                 with zf.open(name) as f:
                     return json.loads(f.read().decode("utf-8"))
     return None
+
+
+def download_ncu_artifacts(cfg: GitHubConfig, run_pk: int) -> Optional[dict]:
+    """Download NCU profiling artifacts and extract parsed metrics and LLM prompt."""
+    list_url = f"https://api.github.com/repos/{cfg.repo}/actions/runs/{run_pk}/artifacts"
+    headers = {
+        "Authorization": f"Bearer {cfg.token}",
+        "Accept": "application/vnd.github+json",
+    }
+    r = requests.get(list_url, headers=headers, timeout=30)
+    r.raise_for_status()
+    artifacts = r.json().get("artifacts", [])
+    
+    # Look for profile-data artifact
+    target = None
+    for a in artifacts:
+        if a.get("name") == "profile-data":
+            target = a
+            break
+    if not target:
+        return None
+
+    download_url = target.get("archive_download_url")
+    r = requests.get(download_url, headers=headers, timeout=60)
+    r.raise_for_status()
+    
+    ncu_data = {}
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        # Look for parsed_metrics.json
+        for name in zf.namelist():
+            if "parsed_metrics.json" in name:
+                with zf.open(name) as f:
+                    ncu_data["metrics"] = json.loads(f.read().decode("utf-8"))
+            elif "llm_prompt.txt" in name:
+                with zf.open(name) as f:
+                    ncu_data["llm_prompt"] = f.read().decode("utf-8")
+    
+    return ncu_data if ncu_data else None
 
 
 def format_result_summary(result: dict) -> str:
@@ -333,6 +376,9 @@ def main():
     parser = argparse.ArgumentParser(description="Submit a CUDA kernel via GitHub Actions and print results")
     parser.add_argument("submission", type=str, help="Path to .cu file to submit")
     parser.add_argument("--run-id", type=str, default=None, help="If provided, include 'run_id' input (required for some workflows)")
+    parser.add_argument("--mode", type=str, default="test", 
+                       choices=["test", "benchmark", "profile"],
+                       help="Execution mode: test (default), benchmark, or profile (NCU profiling)")
     args = parser.parse_args()
 
     gh_token = os.getenv("GITHUB_TOKEN")
@@ -353,7 +399,7 @@ def main():
         sys.exit(1)
 
     repo_root = _find_repo_root(Path(__file__).parent)
-    payload_b64 = build_payload_from_cuda(submission_path, repo_root)
+    payload_b64 = build_payload_from_cuda(submission_path, repo_root, args.mode)
 
     default_run_id = f"cli-{int(time.time())}"
     effective_run_id = args.run_id if args.run_id else None
@@ -391,6 +437,54 @@ def main():
 
     print("\n=== Result Summary ===")
     print(format_result_summary(result))
+    
+    # Download and display NCU profiling data if mode was profile
+    if args.mode == "profile":
+        print("\n\n=== NCU Profiling Results ===")
+        ncu_data = download_ncu_artifacts(cfg, run_pk)
+        if ncu_data:
+            if "metrics" in ncu_data:
+                metrics = ncu_data["metrics"]
+                print("\n┌─ Performance Summary ─────────────────────────────────────────────────┐")
+                summary = metrics.get("summary", {})
+                for key, value in summary.items():
+                    print(f"│ {key:20s}: {value:6.1f}%")
+                print("└───────────────────────────────────────────────────────────────────────┘")
+                
+                bottlenecks = metrics.get("bottlenecks", [])
+                if bottlenecks:
+                    print("\n┌─ Identified Bottlenecks ──────────────────────────────────────────────┐")
+                    for i, bn in enumerate(bottlenecks, 1):
+                        bn_type = bn.get("type", "Unknown")
+                        severity = bn.get("severity", "unknown")
+                        print(f"│ {i}. {bn_type} (Severity: {severity})")
+                        for key, value in bn.items():
+                            if key not in ["type", "severity"]:
+                                print(f"│    - {key}: {value}")
+                    print("└───────────────────────────────────────────────────────────────────────┘")
+                
+                recommendations = metrics.get("recommendations", [])
+                if recommendations:
+                    print("\n┌─ Top Optimization Recommendations ────────────────────────────────────┐")
+                    for i, rec in enumerate(recommendations[:3], 1):  # Show top 3
+                        print(f"│ {i}. {rec.get('category', 'Unknown')}")
+                        print(f"│    Issue: {rec.get('issue', '')}")
+                        suggestions = rec.get("suggestions", [])
+                        if suggestions:
+                            print(f"│    Suggestion: {suggestions[0]}")
+                    print("└───────────────────────────────────────────────────────────────────────┘")
+            
+            if "llm_prompt" in ncu_data:
+                print("\n┌─ LLM Prompt Available ────────────────────────────────────────────────┐")
+                print("│ Full optimization analysis with kernel code has been generated.")
+                print("│ The complete LLM prompt is available in the profile-data artifact.")
+                print("│ First 500 characters:")
+                print("│")
+                llm_preview = ncu_data["llm_prompt"][:500].replace("\n", "\n│ ")
+                print(f"│ {llm_preview}...")
+                print("└───────────────────────────────────────────────────────────────────────┘")
+        else:
+            print("No NCU profiling data found in artifacts.")
 
 
 if __name__ == "__main__":
