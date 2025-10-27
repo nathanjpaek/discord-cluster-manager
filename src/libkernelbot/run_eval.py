@@ -503,7 +503,9 @@ def run_single_evaluation(
 
         cases.flush()
 
-        call += [mode, cases.name]
+        # For profile mode, we pass "test" to the executable but wrap it with profiling
+        exec_mode = "test" if mode == "profile" else mode
+        call += [exec_mode, cases.name]
 
         if mode == "profile":
             return profile_program(system, call, seed=seed, timeout=timeout, multi_gpu=multi_gpu)
