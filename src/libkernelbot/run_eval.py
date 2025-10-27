@@ -399,11 +399,19 @@ def profile_program(
             ("WarpStateStats", "warp_stats.csv"),
         ]
         
+        # Check if NCU is available
+        try:
+            ncu_check = subprocess.run(["ncu", "--version"], capture_output=True, text=True, timeout=5)
+            print(f"[NCU Profiling] NCU version: {ncu_check.stdout.strip()}")
+        except Exception as e:
+            print(f"[NCU Profiling] Warning: NCU not found or not accessible: {e}")
+        
         ncu_success = True
         for section_name, csv_file in sections:
             try:
                 print(f"[NCU Profiling] Running section: {section_name}")
                 ncu_cmd = ["ncu", "--csv", "--section", section_name] + call
+                print(f"[NCU Profiling] Command: {' '.join(ncu_cmd)}")
                 
                 result = subprocess.run(
                     ncu_cmd,
@@ -413,13 +421,23 @@ def profile_program(
                     check=False,
                 )
                 
+                print(f"[NCU Profiling] Return code: {result.returncode}")
+                print(f"[NCU Profiling] Stdout length: {len(result.stdout)} bytes")
+                print(f"[NCU Profiling] Stderr length: {len(result.stderr)} bytes")
+                
                 # Write CSV output to file
                 csv_path = ncu_output_dir / csv_file
                 with open(csv_path, 'w') as f:
                     f.write(result.stdout)
+                print(f"[NCU Profiling] Wrote {csv_path}")
                 
                 if result.returncode != 0:
                     print(f"[NCU Profiling] Warning: NCU section {section_name} returned code {result.returncode}")
+                    print(f"[NCU Profiling] stderr: {result.stderr[:1000]}")
+                    ncu_success = False
+                elif len(result.stdout) < 100:
+                    print(f"[NCU Profiling] Warning: NCU output seems too small for {section_name}")
+                    print(f"[NCU Profiling] stdout: {result.stdout[:500]}")
                     print(f"[NCU Profiling] stderr: {result.stderr[:500]}")
                     
             except subprocess.TimeoutExpired:
