@@ -420,7 +420,14 @@ def profile_program(
         for section_name, csv_file in sections:
             try:
                 print(f"[NCU Profiling] Running section: {section_name}")
-                ncu_cmd = ["ncu", "--csv", "--section", section_name] + call
+                # Add --target-processes all to ensure NCU profiles child processes
+                # and --kernel-name to profile all kernels (regex ".*")
+                ncu_cmd = [
+                    "ncu",
+                    "--csv",
+                    "--target-processes", "all",
+                    "--section", section_name
+                ] + call
                 print(f"[NCU Profiling] Command: {' '.join(ncu_cmd)}")
                 
                 result = subprocess.run(
