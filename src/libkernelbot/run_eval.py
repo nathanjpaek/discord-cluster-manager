@@ -311,6 +311,10 @@ def profile_program(
     seed: Optional[int],
     timeout: int,
     multi_gpu: bool,
+    submission_source: Optional[str] = None,
+    arch: Optional[int] = None,
+    test_file: Optional[str] = None,
+    **extra_kwargs,
 ) -> tuple[RunResult, Optional[ProfileResult]]:
     # The runner-specific configuration should implement logic
     # to fetch the data in this directory and return it as
@@ -382,8 +386,156 @@ def profile_program(
             )
 
         return run_result, profile_result
+    elif system.runtime == "CUDA":
+        # NCU profiling for CUDA
+        ncu_output_dir = output_dir / "ncu_output"
+        ncu_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        print("[NCU Profiling] Running NCU with 6 metric sections...")
+        
+        # Try to use standalone binary if submission has main()
+        use_standalone = False
+        if submission_source and ("int main(" in submission_source or "void main(" in submission_source):
+            print("[NCU Profiling] Detected standalone submission with main()")
+            if _compile_standalone_for_profiling(submission_source, arch=arch):
+                use_standalone = True
+                call = ["./submission_standalone"]  # No arguments needed
+                print("[NCU Profiling] Will profile standalone binary (no test harness)")
+            else:
+                print("[NCU Profiling] Falling back to eval harness")
+        
+        if not use_standalone:
+            print("[NCU Profiling] Using eval harness approach")
+        
+        # Run NCU with 6 different metric sections
+        sections = [
+            ("SpeedOfLight", "speed_of_light.csv"),
+            ("MemoryWorkloadAnalysis", "memory_analysis.csv"),
+            ("ComputeWorkloadAnalysis", "compute_analysis.csv"),
+            ("Occupancy", "occupancy.csv"),
+            ("SchedulerStats", "scheduler_stats.csv"),
+            ("WarpStateStats", "warp_stats.csv"),
+        ]
+        
+        # Check if NCU is available
+        try:
+            ncu_check = subprocess.run(["ncu", "--version"], capture_output=True, text=True, timeout=5)
+            print(f"[NCU Profiling] NCU version: {ncu_check.stdout.strip()}")
+        except Exception as e:
+            print(f"[NCU Profiling] Warning: NCU not found or not accessible: {e}")
+        
+        # Set up environment (only needed if using eval harness)
+        env = os.environ.copy()
+        if not use_standalone:
+            pipe_read, pipe_write = os.pipe()
+            env["POPCORN_FD"] = str(pipe_write)
+            if seed is not None:
+                env["POPCORN_SEED"] = str(seed)
+            if multi_gpu:
+                import torch
+                env["POPCORN_GPUS"] = str(torch.cuda.device_count())
+        
+        ncu_success = True
+        for section_name, csv_file in sections:
+            try:
+                print(f"[NCU Profiling] Running section: {section_name}")
+                # Simple NCU invocation matching working shell script approach
+                ncu_cmd = [
+                    "ncu",
+                    "--csv",
+                    "--section", section_name
+                ] + call
+                print(f"[NCU Profiling] Command: {' '.join(ncu_cmd)}")
+                
+                # Run NCU with or without environment setup depending on standalone vs harness
+                if use_standalone:
+                    result = subprocess.run(
+                        ncu_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        check=False,
+                    )
+                else:
+                    result = subprocess.run(
+                        ncu_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        check=False,
+                        env=env,
+                        pass_fds=[pipe_write],
+                    )
+                
+                print(f"[NCU Profiling] Return code: {result.returncode}")
+                print(f"[NCU Profiling] Stdout length: {len(result.stdout)} bytes")
+                print(f"[NCU Profiling] Stderr length: {len(result.stderr)} bytes")
+                
+                # Write CSV output to file
+                csv_path = ncu_output_dir / csv_file
+                with open(csv_path, 'w') as f:
+                    f.write(result.stdout)
+                print(f"[NCU Profiling] Wrote {csv_path}")
+                
+                if result.returncode != 0:
+                    print(f"[NCU Profiling] Warning: NCU section {section_name} returned code {result.returncode}")
+                    print(f"[NCU Profiling] stderr: {result.stderr[:1000]}")
+                    ncu_success = False
+                elif len(result.stdout) < 100:
+                    print(f"[NCU Profiling] Warning: NCU output seems too small for {section_name}")
+                    print(f"[NCU Profiling] stdout: {result.stdout[:500]}")
+                    print(f"[NCU Profiling] stderr: {result.stderr[:500]}")
+                    
+            except subprocess.TimeoutExpired:
+                print(f"[NCU Profiling] Warning: NCU section {section_name} timed out")
+                ncu_success = False
+            except Exception as e:
+                print(f"[NCU Profiling] Error running NCU section {section_name}: {e}")
+                ncu_success = False
+        
+        # Clean up pipe (only if using eval harness)
+        if not use_standalone:
+            os.close(pipe_write)
+            os.close(pipe_read)
+        
+        # Parse NCU results
+        profile_result = None
+        if ncu_success:
+            try:
+                from libkernelbot.ncu_parser import NCUParser
+                
+                parser = NCUParser(str(ncu_output_dir))
+                parser.parse_all()
+                
+                # Save parsed JSON
+                parser.to_json(str(ncu_output_dir / "parsed_metrics.json"))
+                
+                # Generate LLM prompt with kernel source
+                llm_prompt = parser.to_llm_prompt(submission_source)
+                with open(ncu_output_dir / "llm_prompt.txt", 'w') as f:
+                    f.write(llm_prompt)
+                print(f"[NCU Parser] LLM prompt saved to: {ncu_output_dir / 'llm_prompt.txt'}")
+                
+                profile_result = ProfileResult(
+                    profiler='NCU',
+                    download_url=None,
+                )
+            except Exception as e:
+                print(f"[NCU Profiling] Error parsing NCU results: {e}")
+        
+        # Run the actual program to get execution results
+        if use_standalone:
+            # For standalone, just run it directly
+            print("[Running standalone binary for test results]")
+            run_result = run_program(["./submission_standalone"], seed=None, timeout=timeout, multi_gpu=multi_gpu)
+        else:
+            # For harness approach, run eval.out normally
+            print("[Running eval harness for test results]")
+            run_result = run_program(call, seed=seed, timeout=timeout, multi_gpu=multi_gpu)
+        
+        return run_result, profile_result
     else:
-        # TODO: Implement profiling for other platforms
+        # Fallback for other runtimes
         return run_program(call, seed=seed, timeout=timeout, multi_gpu=multi_gpu), None
 
 def run_single_evaluation(
@@ -399,6 +551,7 @@ def run_single_evaluation(
     ranked_timeout: int = Timeout.RANKED,
     ranking_by: str = "last",
     seed: Optional[int] = None,
+    **extra_kwargs,
 ) -> tuple[RunResult, Optional[ProfileResult]]:
     """
     A single runner run, either in the context of test files, or in the
@@ -408,7 +561,11 @@ def run_single_evaluation(
         if mode == "test":
             timeout = test_timeout
             cases.write(tests)
-        elif mode in ["benchmark", "profile", "leaderboard"]:
+        elif mode == "profile":
+            # Profile mode uses test cases, not benchmarks
+            timeout = test_timeout
+            cases.write(tests)
+        elif mode in ["benchmark", "leaderboard"]:
             timeout = ranked_timeout if mode == "leaderboard" else benchmark_timeout
             if ranking_by == "last":
                 cases.write(benchmarks.splitlines(keepends=True)[-1])
@@ -419,10 +576,19 @@ def run_single_evaluation(
 
         cases.flush()
 
-        call += [mode, cases.name]
+        # For profile mode, we pass "test" to the executable but wrap it with profiling
+        exec_mode = "test" if mode == "profile" else mode
+        
+        # Only add arguments if we have a call (not standalone profile mode)
+        if call:
+            call += [exec_mode, cases.name]
 
         if mode == "profile":
-            return profile_program(system, call, seed=seed, timeout=timeout, multi_gpu=multi_gpu)
+            # Pass the test cases file path for standalone profiling
+            return profile_program(
+                system, call, seed=seed, timeout=timeout, multi_gpu=multi_gpu,
+                test_file=cases.name, **extra_kwargs
+            )
 
         return run_program(call, seed=seed, timeout=timeout, multi_gpu=multi_gpu), None
 
@@ -488,6 +654,34 @@ def make_system_info() -> SystemInfo: # noqa: C901
     return info
 
 
+def _compile_standalone_for_profiling(
+    submission_source: str,
+    arch: Optional[int] = None,
+) -> bool:
+    """Compile submission as standalone binary for NCU profiling.
+    Returns True if successful."""
+    print("[Profiling] Compiling standalone binary for NCU...")
+    
+    # Write standalone submission
+    Path("submission_standalone.cu").write_text(submission_source)
+    
+    # Compile standalone
+    nvcc_cmd = ["nvcc", "-O3"]
+    if arch is None:
+        nvcc_cmd.append("-arch=native")
+    else:
+        nvcc_cmd.append(f"-gencode=arch=compute_{arch},code=sm_{arch}")
+    nvcc_cmd.extend(["-o", "submission_standalone", "submission_standalone.cu"])
+    
+    try:
+        result = subprocess.run(nvcc_cmd, capture_output=True, text=True, timeout=180, check=True)
+        print("[Profiling] Standalone compilation successful")
+        return True
+    except Exception as e:
+        print(f"[Profiling] Standalone compilation failed: {e}")
+        return False
+
+
 def run_cuda_script(  # # noqa: C901
     system: SystemInfo,
     sources: dict[str, str],
@@ -518,39 +712,73 @@ def run_cuda_script(  # # noqa: C901
         tuple[CompileResult, RunResult]: CUDA compile/eval result information
     """
     start = datetime.datetime.now()
-    try:
-        # Write submission files to directory
-        _create_files(sources)
-        _create_files(headers)
-
-        compile_result = compile_cuda_script(
-            files=list(sources.keys()),
-            arch=arch,
-            include_dirs=include_dirs,
-            defines=defines,
-            libraries=libraries,
-            flags=flags,
-            verbose=True,
+    
+    # Save submission source before cleanup (needed for NCU profiling)
+    submission_source = sources.get("submission.cu", "")
+    
+    # Check if this is profile mode with a standalone kernel
+    mode = kwargs.get("mode", "test")
+    is_standalone_profile = (
+        mode == "profile" and 
+        submission_source and 
+        ("int main(" in submission_source or "void main(" in submission_source)
+    )
+    
+    if is_standalone_profile:
+        print("[Profile Mode] Detected standalone kernel - skipping eval harness compilation")
+        # For standalone profiling, we'll compile in profile_program instead
+        # Create a dummy successful compile result
+        compile_result = CompileResult(
+            nvcc_found=True,
+            nvcc_version="",
+            success=True,
+            command="(standalone profiling mode - compiled separately)",
+            stdout="",
+            stderr="",
+            exit_code=0,
         )
+    else:
+        try:
+            # Write submission files to directory
+            _create_files(sources)
+            _create_files(headers)
 
-        if not compile_result.success:
-            return EvalResult(
-                start=start,
-                end=datetime.datetime.now(),
-                compilation=compile_result,
-                run=None,
-                profile=None,
+            compile_result = compile_cuda_script(
+                files=list(sources.keys()),
+                arch=arch,
+                include_dirs=include_dirs,
+                defines=defines,
+                libraries=libraries,
+                flags=flags,
+                verbose=True,
             )
 
-    # cleaning up all source files _before_ we let the user code run, just in
-    # case there's something in there that the user isn't supposed to snoop
-    finally:
-        tmp_files = list(sources.keys()) + list((headers or {}).keys())
-        for f in tmp_files:
-            if os.path.exists(f):
-                os.remove(f)
+            if not compile_result.success:
+                return EvalResult(
+                    start=start,
+                    end=datetime.datetime.now(),
+                    compilation=compile_result,
+                    run=None,
+                    profile=None,
+                )
 
-    run_result, profile_result = run_single_evaluation(system, ["./eval.out"], **kwargs)
+        # cleaning up all source files _before_ we let the user code run, just in
+        # case there's something in there that the user isn't supposed to snoop
+        finally:
+            tmp_files = list(sources.keys()) + list((headers or {}).keys())
+            for f in tmp_files:
+                if os.path.exists(f):
+                    os.remove(f)
+
+    # Pass submission source and arch to enable standalone profiling
+    kwargs_with_extras = {**kwargs, "submission_source": submission_source, "arch": arch}
+    
+    if is_standalone_profile:
+        # For standalone profile, we don't use eval.out
+        run_result, profile_result = run_single_evaluation(system, [], **kwargs_with_extras)
+    else:
+        run_result, profile_result = run_single_evaluation(system, ["./eval.out"], **kwargs_with_extras)
+    
     return EvalResult(
         start=start,
         end=datetime.datetime.now(),

@@ -1,42 +1,55 @@
-//!POPCORN leaderboard identity_cuda
+#include <stdio.h>
+#include <cuda_runtime.h>
 
-#include <array>
-#include <vector>
-#include "task.h"
-#include "utils.h"
-
-__global__ void copy_kernel(float *input, float *output, int N)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < N)
-    {
-        output[idx] = input[idx];
+__global__ void saxpy_kernel(int n, float a, float *x, float *y) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        y[i] = a * x[i] + y[i];
     }
 }
 
-output_t custom_kernel(input_t data)
-{
-    // Allocate GPU memory
-    int N = data.size();
-    float *d_input, *d_output;
-    cudaMalloc(&d_input, N * sizeof(float));
-    cudaMalloc(&d_output, N * sizeof(float));
+void saxpy(int n, float a, float *x, float *y) {
+    float *d_x, *d_y;
     
-    // Copy input to GPU
-    cudaMemcpy(d_input, data.data(), N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc(&d_x, n * sizeof(float));
+    cudaMalloc(&d_y, n * sizeof(float));
     
-    // Launch kernel - THIS IS WHERE YOUR KERNEL RUNS ON GPU!
+    cudaMemcpy(d_x, x, n * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_y, y, n * sizeof(float), cudaMemcpyHostToDevice);
+    
     int blockSize = 256;
-    int numBlocks = (N + blockSize - 1) / blockSize;
-    copy_kernel<<<numBlocks, blockSize>>>(d_input, d_output, N);
+    int numBlocks = (n + blockSize - 1) / blockSize;
     
-    // Copy result back to CPU
-    output_t result(N);
-    cudaMemcpy(result.data(), d_output, N * sizeof(float), cudaMemcpyDeviceToHost);
+    saxpy_kernel<<<numBlocks, blockSize>>>(n, a, d_x, d_y);
     
-    // Free GPU memory
-    cudaFree(d_input);
-    cudaFree(d_output);
+    cudaMemcpy(y, d_y, n * sizeof(float), cudaMemcpyDeviceToHost);
     
-    return result;
+    cudaFree(d_x);
+    cudaFree(d_y);
+}
+
+int main(void) {
+    int N = 1 << 20; // 1M elements
+    float a = 2.0f;
+    
+    float *x = (float*)malloc(N * sizeof(float));
+    float *y = (float*)malloc(N * sizeof(float));
+    
+    for (int i = 0; i < N; i++) {
+        x[i] = 1.0f;
+        y[i] = 2.0f;
+    }
+    
+    saxpy(N, a, x, y);
+    
+    float maxError = 0.0f;
+    for (int i = 0; i < N; i++) {
+        maxError = fmax(maxError, fabs(y[i] - 4.0f));
+    }
+    printf("Max error: %f\n", maxError);
+    
+    free(x);
+    free(y);
+    
+    return 0;
 }
