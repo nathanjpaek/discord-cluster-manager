@@ -551,6 +551,7 @@ def run_single_evaluation(
     ranked_timeout: int = Timeout.RANKED,
     ranking_by: str = "last",
     seed: Optional[int] = None,
+    **extra_kwargs,
 ) -> tuple[RunResult, Optional[ProfileResult]]:
     """
     A single runner run, either in the context of test files, or in the
@@ -586,7 +587,7 @@ def run_single_evaluation(
             # Pass the test cases file path for standalone profiling
             return profile_program(
                 system, call, seed=seed, timeout=timeout, multi_gpu=multi_gpu,
-                test_file=cases.name
+                test_file=cases.name, **extra_kwargs
             )
 
         return run_program(call, seed=seed, timeout=timeout, multi_gpu=multi_gpu), None
