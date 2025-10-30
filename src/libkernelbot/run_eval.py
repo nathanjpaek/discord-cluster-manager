@@ -232,7 +232,7 @@ def compile_cuda_script(  # # noqa: C901
 
     # Check CUDA is available and installed correctly
     print_("[CUDA Env Check]")
-    # temp hack on L40S
+    # temp hack on L40S, NOTE: remove later
     _ensure_cuda_paths()
     try:
         # these check cuda compiler is also available

@@ -12,3 +12,4 @@ yoyo.ini
 .venv
 
 start_dev.sh
+.env
