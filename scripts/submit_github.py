@@ -13,6 +13,15 @@ from typing import Optional
 
 import requests
 
+"""
+This is our file for testing workflow submitting a CUDA kernel, execute via Github Actions.
+- submits CUDA kernels to GitHub Actions 
+- for execution on GPU-enabled self-hosted runners, 
+- waits for completion
+- and displays results in a structured format.
+
+"""
+
 
 @dataclass
 class GitHubConfig:

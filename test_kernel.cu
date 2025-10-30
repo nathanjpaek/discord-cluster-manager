@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <cuda_runtime.h>
 
+// this is our basic saxpy kernel for testing
 __global__ void saxpy_kernel(int n, float a, float *x, float *y) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {

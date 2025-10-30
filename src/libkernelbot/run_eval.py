@@ -122,6 +122,55 @@ def _create_files(files: Optional[dict[str, str]]):
         Path(name).write_text(content)
 
 
+def _prepend_env_path(var_name: str, entries: list[str]) -> None:
+    existing = os.environ.get(var_name, "")
+    parts = [p for p in existing.split(os.pathsep) if p]
+    updated = False
+    for entry in entries:
+        if not entry:
+            continue
+        if entry not in parts:
+            parts.insert(0, entry)
+            updated = True
+    if updated:
+        os.environ[var_name] = os.pathsep.join(parts)
+
+
+def _ensure_cuda_paths() -> None:
+    roots = []
+    for env_var in ("CUDA_HOME", "CUDA_PATH"):
+        root = os.environ.get(env_var)
+        if root:
+            roots.append(Path(root))
+
+    roots.extend(
+        [
+            Path("/usr/local/cuda-12.2"),
+            Path("/usr/local/cuda"),
+        ]
+    )
+
+    bin_entries: list[str] = []
+    lib_entries: list[str] = []
+
+    for root in roots:
+        try:
+            resolved = root.resolve()
+        except FileNotFoundError:
+            continue
+        bin_dir = resolved / "bin"
+        lib_dir = resolved / "lib64"
+        if bin_dir.is_dir():
+            bin_entries.append(str(bin_dir))
+        if lib_dir.is_dir():
+            lib_entries.append(str(lib_dir))
+
+    if bin_entries:
+        _prepend_env_path("PATH", bin_entries)
+    if lib_entries:
+        _prepend_env_path("LD_LIBRARY_PATH", lib_entries)
+
+
 def compile_cuda_script(  # # noqa: C901
     files: list[str],
     arch: Optional[int] = None,
@@ -183,10 +232,13 @@ def compile_cuda_script(  # # noqa: C901
 
     # Check CUDA is available and installed correctly
     print_("[CUDA Env Check]")
+    # temp hack on L40S
+    _ensure_cuda_paths()
     try:
         # these check cuda compiler is also available
         nvcc = subprocess.check_output(["which", "nvcc"], encoding="utf-8").strip()
         nvcc_version = subprocess.check_output(["nvcc", "--version"], encoding="utf-8")
+        print(f"[CUDA Env Check] NVCC found: {nvcc} {nvcc_version}")
     except subprocess.CalledProcessError as e:
         return CompileResult(
             nvcc_found=False,

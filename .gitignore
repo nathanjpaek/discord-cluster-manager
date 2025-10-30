@@ -10,3 +10,5 @@ package-lock.json
 reference-kernels/
 yoyo.ini
 .venv
+
+start_dev.sh

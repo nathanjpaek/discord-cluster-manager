@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       runner:
-        description: 'AMD runner to run workflow on'
+        description: 'Local GPU runner to run workflow on'
         required: true
         default: "gpumode-nvidia-arc"
         type: string
@@ -31,7 +31,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Create input files
-      shell: bash
+      shell: bash 
       run: |
         # Extract the payload content without printing it
         PAYLOAD=$(jq -r '.inputs.payload' $GITHUB_EVENT_PATH)
